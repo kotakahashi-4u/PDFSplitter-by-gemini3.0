@@ -1,0 +1,414 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PDF Splitter - 安全・高速なPDF分割ツール</title>
+    
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- Fonts & Icons -->
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;500;700&display=swap" rel="stylesheet">
+    <script src="https://unpkg.com/@phosphor-icons/web"></script>
+
+    <!-- Libraries -->
+    <script src="https://unpkg.com/pdf-lib@1.17.1/dist/pdf-lib.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/FileSaver.js/2.0.5/FileSaver.min.js"></script>
+
+    <style>
+        body {
+            font-family: 'Noto Sans JP', sans-serif;
+            background-color: #f3f4f6;
+        }
+        .drag-active {
+            border-color: #4f46e5 !important;
+            background-color: #eef2ff !important;
+        }
+        .btn-ripple {
+            position: relative;
+            overflow: hidden;
+        }
+        /* Loading Spinner */
+        .loader {
+            border: 4px solid #f3f3f3;
+            border-radius: 50%;
+            border-top: 4px solid #4f46e5;
+            width: 24px;
+            height: 24px;
+            -webkit-animation: spin 1s linear infinite; /* Safari */
+            animation: spin 1s linear infinite;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        
+        /* Custom Scrollbar for preview list if needed */
+        ::-webkit-scrollbar {
+            width: 8px;
+        }
+        ::-webkit-scrollbar-track {
+            background: #f1f1f1; 
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #c7c7c7; 
+            border-radius: 4px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: #a8a8a8; 
+        }
+    </style>
+</head>
+<body class="text-gray-700 min-h-screen flex flex-col">
+
+    <!-- Navbar -->
+    <nav class="bg-white shadow-sm z-10">
+        <div class="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div class="flex justify-between h-16 items-center">
+                <div class="flex items-center gap-2">
+                    <i class="ph-fill ph-files text-indigo-600 text-3xl"></i>
+                    <h1 class="text-xl font-bold text-gray-800">PDF Splitter</h1>
+                </div>
+                <div class="text-sm text-gray-500 hidden sm:block">ブラウザで完結・安全処理</div>
+            </div>
+        </div>
+    </nav>
+
+    <!-- Main Content -->
+    <main class="flex-grow container mx-auto px-4 py-8 max-w-3xl">
+        
+        <!-- Step 1: Upload Area -->
+        <div id="upload-section" class="bg-white rounded-xl shadow-lg p-8 transition-all duration-300">
+            <h2 class="text-lg font-bold mb-4 flex items-center gap-2">
+                <span class="bg-indigo-100 text-indigo-600 w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold">1</span>
+                PDFをアップロード
+            </h2>
+            
+            <div id="drop-zone" class="border-2 border-dashed border-gray-300 rounded-lg p-10 text-center cursor-pointer transition-colors duration-200 hover:bg-gray-50 hover:border-indigo-400">
+                <input type="file" id="file-input" class="hidden" accept="application/pdf">
+                <div class="flex flex-col items-center pointer-events-none">
+                    <i class="ph ph-cloud-arrow-up text-5xl text-gray-400 mb-4"></i>
+                    <p class="text-lg font-medium text-gray-700">ここにファイルをドロップ</p>
+                    <p class="text-sm text-gray-500 mt-1">またはクリックしてファイルを選択</p>
+                    <p class="text-xs text-indigo-500 mt-4 bg-indigo-50 px-3 py-1 rounded-full">PDFのみ対応</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- Step 2: Configuration Area (Hidden initially) -->
+        <div id="config-section" class="bg-white rounded-xl shadow-lg p-8 mt-6 hidden opacity-0 transition-opacity duration-500">
+            <div class="flex justify-between items-start mb-6 border-b pb-4">
+                <div>
+                    <h2 class="text-lg font-bold flex items-center gap-2">
+                        <span class="bg-indigo-100 text-indigo-600 w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold">2</span>
+                        分割設定
+                    </h2>
+                    <div id="file-info" class="mt-2 text-sm text-gray-600 flex items-center gap-2 ml-10">
+                        <!-- JS fills this -->
+                    </div>
+                </div>
+                <button id="reset-btn" class="text-gray-400 hover:text-red-500 transition-colors p-2" title="リセット">
+                    <i class="ph ph-trash text-xl"></i>
+                </button>
+            </div>
+
+            <!-- Split Mode Selection -->
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-8">
+                <label class="cursor-pointer relative">
+                    <input type="radio" name="split-mode" value="all" class="peer sr-only" checked>
+                    <div class="p-4 border rounded-lg hover:bg-gray-50 peer-checked:border-indigo-600 peer-checked:bg-indigo-50 peer-checked:ring-1 peer-checked:ring-indigo-600 transition-all h-full">
+                        <div class="flex items-center gap-3 mb-2">
+                            <i class="ph ph-stack text-2xl text-indigo-600"></i>
+                            <span class="font-bold text-gray-800">全ページ分割</span>
+                        </div>
+                        <p class="text-xs text-gray-500 pl-9">各ページを1つのPDFファイルとして保存します。（例: 10ページ → 10ファイル）</p>
+                    </div>
+                </label>
+
+                <label class="cursor-pointer relative">
+                    <input type="radio" name="split-mode" value="range" class="peer sr-only">
+                    <div class="p-4 border rounded-lg hover:bg-gray-50 peer-checked:border-indigo-600 peer-checked:bg-indigo-50 peer-checked:ring-1 peer-checked:ring-indigo-600 transition-all h-full">
+                        <div class="flex items-center gap-3 mb-2">
+                            <i class="ph ph-scissors text-2xl text-indigo-600"></i>
+                            <span class="font-bold text-gray-800">指定位置で分割</span>
+                        </div>
+                        <p class="text-xs text-gray-500 pl-9">指定したページ番号でファイルを2つに分割します。</p>
+                    </div>
+                </label>
+            </div>
+
+            <!-- Range Slider (Only visible for range mode) -->
+            <div id="range-options" class="hidden pl-4 border-l-4 border-indigo-100 mb-8">
+                <label class="block text-sm font-medium text-gray-700 mb-2">分割するページ位置:</label>
+                <div class="flex items-center gap-4">
+                    <span class="text-sm font-bold text-indigo-600">P.1</span>
+                    <input type="range" id="split-page-slider" min="2" max="10" value="2" class="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-indigo-600">
+                    <span id="max-page-label" class="text-sm font-bold text-indigo-600">P.10</span>
+                </div>
+                <div class="mt-4 flex flex-col sm:flex-row gap-4 text-sm bg-gray-50 p-3 rounded text-gray-600 border border-gray-100">
+                    <div class="flex-1 text-center">
+                        <span class="block font-bold text-gray-800 mb-1">ファイル 1</span>
+                        <span id="file1-range">ページ 1 - 1</span>
+                    </div>
+                    <div class="flex items-center justify-center text-gray-400">
+                        <i class="ph ph-arrow-right"></i>
+                    </div>
+                    <div class="flex-1 text-center">
+                        <span class="block font-bold text-gray-800 mb-1">ファイル 2</span>
+                        <span id="file2-range">ページ 2 - End</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Action Button -->
+            <button id="process-btn" class="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-4 px-6 rounded-lg shadow-md hover:shadow-lg transform transition hover:-translate-y-0.5 flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed">
+                <span>分割してZIPをダウンロード</span>
+                <i class="ph ph-download-simple text-xl"></i>
+            </button>
+            
+            <div id="status-msg" class="text-center mt-4 text-sm text-gray-500 hidden">
+                <div class="flex items-center justify-center gap-2">
+                    <div class="loader"></div>
+                    <span>処理中... そのままお待ちください</span>
+                </div>
+            </div>
+        </div>
+
+    </main>
+
+    <!-- Footer -->
+    <footer class="bg-gray-100 py-6 mt-auto">
+        <div class="max-w-4xl mx-auto px-4 text-center">
+            <p class="text-xs text-gray-500">&copy; 2026 PDF Splitter Tool. All local processing.</p>
+        </div>
+    </footer>
+
+    <!-- Script -->
+    <script>
+        // DOM Elements
+        const dropZone = document.getElementById('drop-zone');
+        const fileInput = document.getElementById('file-input');
+        const uploadSection = document.getElementById('upload-section');
+        const configSection = document.getElementById('config-section');
+        const fileInfoDiv = document.getElementById('file-info');
+        const resetBtn = document.getElementById('reset-btn');
+        const processBtn = document.getElementById('process-btn');
+        const statusMsg = document.getElementById('status-msg');
+        
+        const modeRadios = document.querySelectorAll('input[name="split-mode"]');
+        const rangeOptions = document.getElementById('range-options');
+        const splitPageSlider = document.getElementById('split-page-slider');
+        const maxPageLabel = document.getElementById('max-page-label');
+        const file1Range = document.getElementById('file1-range');
+        const file2Range = document.getElementById('file2-range');
+
+        // State
+        let currentFile = null;
+        let pdfDoc = null;
+        let totalPages = 0;
+        let originalFileName = "";
+
+        // --- Event Listeners: Drag & Drop ---
+        dropZone.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            dropZone.classList.add('drag-active');
+        });
+
+        dropZone.addEventListener('dragleave', () => {
+            dropZone.classList.remove('drag-active');
+        });
+
+        dropZone.addEventListener('drop', (e) => {
+            e.preventDefault();
+            dropZone.classList.remove('drag-active');
+            if (e.dataTransfer.files.length) {
+                handleFile(e.dataTransfer.files[0]);
+            }
+        });
+
+        dropZone.addEventListener('click', () => fileInput.click());
+
+        fileInput.addEventListener('change', (e) => {
+            if (e.target.files.length) {
+                handleFile(e.target.files[0]);
+            }
+        });
+
+        // --- Logic: File Loading ---
+        async function handleFile(file) {
+            if (file.type !== 'application/pdf') {
+                alert('PDFファイルのみ対応しています。');
+                return;
+            }
+
+            currentFile = file;
+            originalFileName = file.name.replace('.pdf', '');
+            
+            // Show Loading state on dropzone text if needed, or just proceed
+            
+            try {
+                const arrayBuffer = await file.arrayBuffer();
+                pdfDoc = await PDFLib.PDFDocument.load(arrayBuffer);
+                totalPages = pdfDoc.getPageCount();
+
+                if (totalPages < 2) {
+                    alert('このPDFは1ページしかないため分割できません。');
+                    resetApp();
+                    return;
+                }
+
+                // Update UI
+                fileInfoDiv.innerHTML = `
+                    <i class="ph-fill ph-file-pdf text-red-500 text-lg"></i>
+                    <span class="font-medium text-gray-700 truncate max-w-[200px]">${file.name}</span>
+                    <span class="bg-gray-200 text-gray-600 text-xs px-2 py-0.5 rounded-full ml-1">${totalPages} Pages</span>
+                `;
+
+                // Setup Slider limits
+                splitPageSlider.max = totalPages;
+                splitPageSlider.value = Math.ceil(totalPages / 2); // Default to middle
+                maxPageLabel.textContent = `P.${totalPages}`;
+                updateRangeLabels();
+
+                // Show Config Section
+                configSection.classList.remove('hidden');
+                setTimeout(() => configSection.classList.remove('opacity-0'), 10); // Fade in
+                
+                // Hide upload visual emphasis
+                dropZone.classList.add('bg-gray-50', 'border-gray-200');
+                dropZone.classList.remove('border-dashed', 'border-gray-300');
+                dropZone.querySelector('p').textContent = "ファイル変更";
+
+            } catch (err) {
+                console.error(err);
+                alert('PDFの読み込みに失敗しました。パスワード付きPDFは解除してからアップロードしてください。');
+            }
+        }
+
+        // --- Logic: UI Interactions ---
+        resetBtn.addEventListener('click', resetApp);
+
+        function resetApp() {
+            currentFile = null;
+            pdfDoc = null;
+            totalPages = 0;
+            fileInput.value = '';
+            configSection.classList.add('opacity-0');
+            setTimeout(() => configSection.classList.add('hidden'), 500);
+            
+            // Reset Dropzone
+            dropZone.classList.remove('bg-gray-50', 'border-gray-200');
+            dropZone.classList.add('border-dashed', 'border-gray-300');
+            dropZone.querySelector('p').textContent = "ここにファイルをドロップ";
+            
+            // Reset Status
+            statusMsg.classList.add('hidden');
+            processBtn.disabled = false;
+        }
+
+        // Toggle Split Modes
+        modeRadios.forEach(radio => {
+            radio.addEventListener('change', (e) => {
+                if (e.target.value === 'range') {
+                    rangeOptions.classList.remove('hidden');
+                } else {
+                    rangeOptions.classList.add('hidden');
+                }
+            });
+        });
+
+        // Slider Logic
+        splitPageSlider.addEventListener('input', updateRangeLabels);
+
+        function updateRangeLabels() {
+            const splitAt = parseInt(splitPageSlider.value);
+            // File 1: 1 to splitAt-1 (but since splitAt starts file 2, file 1 is 1 to splitAt-1)
+            // Wait, UI says "Split at". Usually means File 2 starts at X.
+            // Let's interpret slider value X as "Start of 2nd File".
+            
+            // Logic: 
+            // If Slider = 2. File 1 (Page 1). File 2 (Pages 2-End).
+            // If Slider = Total. File 1 (Pages 1-Total-1). File 2 (Page Total).
+            
+            const startOfFile2 = splitAt;
+            
+            // File 1 Range
+            const f1Start = 1;
+            const f1End = startOfFile2 - 1;
+            
+            // File 2 Range
+            const f2Start = startOfFile2;
+            const f2End = totalPages;
+
+            file1Range.textContent = `ページ ${f1Start} - ${f1End}`;
+            file2Range.textContent = `ページ ${f2Start} - ${f2End}`;
+        }
+
+        // --- Logic: Processing & Downloading ---
+        processBtn.addEventListener('click', async () => {
+            if (!pdfDoc) return;
+
+            const mode = document.querySelector('input[name="split-mode"]:checked').value;
+            
+            processBtn.disabled = true;
+            processBtn.classList.add('opacity-75');
+            statusMsg.classList.remove('hidden');
+
+            try {
+                const zip = new JSZip();
+                
+                if (mode === 'all') {
+                    // Split Every Page
+                    for (let i = 0; i < totalPages; i++) {
+                        const newPdf = await PDFLib.PDFDocument.create();
+                        const [copiedPage] = await newPdf.copyPages(pdfDoc, [i]);
+                        newPdf.addPage(copiedPage);
+                        const pdfBytes = await newPdf.save();
+                        
+                        // Pad numbers: page_01.pdf
+                        const num = String(i + 1).padStart(String(totalPages).length, '0');
+                        zip.file(`${originalFileName}_p${num}.pdf`, pdfBytes);
+                    }
+                } else {
+                    // Split at specific page
+                    const splitAt = parseInt(splitPageSlider.value); // 1-based index where file 2 starts
+                    const splitIndex = splitAt - 1; // 0-based index
+                    
+                    // Create File 1 (Indices 0 to splitIndex - 1)
+                    const doc1 = await PDFLib.PDFDocument.create();
+                    const indices1 = [];
+                    for(let i=0; i < splitIndex; i++) indices1.push(i);
+                    const pages1 = await doc1.copyPages(pdfDoc, indices1);
+                    pages1.forEach(p => doc1.addPage(p));
+                    const bytes1 = await doc1.save();
+                    zip.file(`${originalFileName}_part1.pdf`, bytes1);
+
+                    // Create File 2 (Indices splitIndex to End)
+                    const doc2 = await PDFLib.PDFDocument.create();
+                    const indices2 = [];
+                    for(let i=splitIndex; i < totalPages; i++) indices2.push(i);
+                    const pages2 = await doc2.copyPages(pdfDoc, indices2);
+                    pages2.forEach(p => doc2.addPage(p));
+                    const bytes2 = await doc2.save();
+                    zip.file(`${originalFileName}_part2.pdf`, bytes2);
+                }
+
+                // Generate Zip and Download
+                const content = await zip.generateAsync({type: "blob"});
+                saveAs(content, `${originalFileName}_split.zip`);
+
+            } catch (err) {
+                console.error(err);
+                alert('処理中にエラーが発生しました。');
+            } finally {
+                processBtn.disabled = false;
+                processBtn.classList.remove('opacity-75');
+                statusMsg.classList.add('hidden');
+            }
+        });
+
+    </script>
+</body>
+</html>
