@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>PDF Tools - 分割＆結合</title>
+    <title>PDF Tools - 分割・結合・整理</title>
     
     <!-- Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
@@ -13,86 +13,183 @@
     <script src="https://unpkg.com/@phosphor-icons/web"></script>
 
     <!-- Libraries -->
+    <!-- pdf-lib: For editing (split/merge/rotate) -->
     <script src="https://unpkg.com/pdf-lib@1.17.1/dist/pdf-lib.min.js"></script>
+    <!-- pdf.js: For rendering previews -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+    <script>
+        // Set worker properly
+        pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+    </script>
+    
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/FileSaver.js/2.0.5/FileSaver.min.js"></script>
 
     <style>
         body {
             font-family: 'Noto Sans JP', sans-serif;
-            background-color: #f3f4f6;
+            background-color: #f8fafc;
         }
         .drag-active {
-            border-color: #4f46e5 !important;
+            border-color: #6366f1 !important;
             background-color: #eef2ff !important;
         }
-        /* Tab Animations */
+        
+        /* Tab Animations & Styles */
         .tab-content {
             display: none;
             opacity: 0;
-            transition: opacity 0.3s ease-in-out;
+            transform: translateY(10px);
+            transition: opacity 0.3s ease-out, transform 0.3s ease-out;
         }
         .tab-content.active {
             display: block;
             opacity: 1;
+            transform: translateY(0);
         }
         
+        /* Modern Tab Button Styles */
+        .nav-pill {
+            position: relative;
+            border-radius: 0.75rem;
+            padding: 0.5rem 1.5rem;
+            font-size: 0.875rem;
+            font-weight: 600;
+            color: #64748b;
+            transition: all 0.2s ease;
+            white-space: nowrap;
+        }
+        .nav-pill:hover {
+            color: #334155;
+            background-color: rgba(255, 255, 255, 0.5);
+        }
+        .nav-pill.active {
+            background-color: #ffffff;
+            color: #4f46e5;
+            box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.1), 0 1px 2px 0 rgba(0, 0, 0, 0.06);
+        }
+
         /* Merge List Dragging Styles */
         .draggable-item {
             cursor: grab;
-            transition: all 0.2s;
+            transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
         }
         .draggable-item:active {
             cursor: grabbing;
+            transform: scale(1.01);
         }
         .draggable-item.dragging {
             opacity: 0.5;
-            background: #f3f4f6;
-            border: 2px dashed #a5b4fc;
+            background: #f1f5f9;
+            border: 2px dashed #cbd5e1;
+        }
+
+        /* Organize Page Card Styles */
+        .page-card {
+            transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+        .page-card:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+        }
+        .page-card.selected {
+            border-color: #6366f1;
+            background-color: #eef2ff;
+            box-shadow: 0 0 0 2px #6366f1;
+        }
+        .page-card.deleted {
+            opacity: 0.6;
+            background-color: #fef2f2;
+            border-color: #fca5a5;
+            filter: grayscale(0.5);
+        }
+        /* Canvas Preview Styles */
+        .preview-canvas-container {
+            width: 100%;
+            height: 100%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            overflow: hidden;
+            background-color: #f8fafc;
+        }
+        .preview-canvas {
+            max-width: 100%;
+            max-height: 100%;
+            object-fit: contain;
+            box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+            transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1); /* Smooth rotation */
         }
 
         /* Loading Spinner */
         .loader {
-            border: 4px solid #f3f3f3;
+            border: 3px solid #f3f3f3;
             border-radius: 50%;
-            border-top: 4px solid #4f46e5;
-            width: 24px;
-            height: 24px;
-            -webkit-animation: spin 1s linear infinite;
-            animation: spin 1s linear infinite;
+            border-top: 3px solid #6366f1;
+            width: 20px;
+            height: 20px;
+            -webkit-animation: spin 0.8s linear infinite;
+            animation: spin 0.8s linear infinite;
         }
         @keyframes spin {
             0% { transform: rotate(0deg); }
             100% { transform: rotate(360deg); }
         }
+        
+        /* Toast Animation */
+        @keyframes fadeInOut {
+            0% { opacity: 0; transform: translate(-50%, 20px); }
+            10% { opacity: 1; transform: translate(-50%, 0); }
+            90% { opacity: 1; transform: translate(-50%, 0); }
+            100% { opacity: 0; transform: translate(-50%, -20px); }
+        }
+        .toast {
+            animation: fadeInOut 3s forwards;
+        }
     </style>
 </head>
-<body class="text-gray-700 min-h-screen flex flex-col">
+<body class="text-slate-600 min-h-screen flex flex-col">
 
     <!-- Navbar -->
-    <nav class="bg-white shadow-sm z-10 sticky top-0">
-        <div class="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8">
+    <nav class="bg-white/80 backdrop-blur-md border-b border-slate-200 sticky top-0 z-20">
+        <div class="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8">
             <div class="flex justify-between h-16 items-center">
-                <div class="flex items-center gap-2">
-                    <i class="ph-fill ph-toolbox text-indigo-600 text-3xl"></i>
-                    <h1 class="text-xl font-bold text-gray-800">PDF Tools</h1>
+                <div class="flex items-center gap-3">
+                    <div class="bg-indigo-600 text-white p-1.5 rounded-lg shadow-sm">
+                        <i class="ph-bold ph-toolbox text-xl"></i>
+                    </div>
+                    <h1 class="text-lg font-bold text-slate-800 tracking-tight">PDF Tools</h1>
                 </div>
-                <div class="text-sm text-gray-500 hidden sm:block">分割・結合をブラウザで安全に</div>
+                <div class="text-xs font-medium text-slate-400 hidden sm:block bg-slate-50 px-3 py-1 rounded-full border border-slate-100">
+                    Secure Local Processing
+                </div>
             </div>
         </div>
     </nav>
 
     <!-- Main Content -->
-    <main class="flex-grow container mx-auto px-4 py-8 max-w-3xl">
+    <main class="flex-grow container mx-auto px-4 py-8 max-w-5xl">
 
-        <!-- Mode Tabs -->
-        <div class="flex justify-center mb-8">
-            <div class="bg-white p-1 rounded-xl shadow-sm inline-flex">
-                <button onclick="switchTab('split')" id="tab-split" class="px-6 py-2 rounded-lg text-sm font-bold transition-all bg-indigo-600 text-white shadow-md">
-                    <i class="ph ph-scissors mr-1"></i> 分割 (Split)
+        <!-- Modern Tabs -->
+        <div class="flex justify-center mb-10">
+            <div class="bg-slate-100/80 p-1.5 rounded-2xl inline-flex gap-1 shadow-inner border border-slate-200/50">
+                <button onclick="switchTab('split')" id="tab-split" class="nav-pill active">
+                    <div class="flex items-center gap-2">
+                        <i class="ph-bold ph-scissors text-lg"></i>
+                        <span>分割</span>
+                    </div>
                 </button>
-                <button onclick="switchTab('merge')" id="tab-merge" class="px-6 py-2 rounded-lg text-sm font-bold transition-all text-gray-500 hover:text-gray-700 hover:bg-gray-100">
-                    <i class="ph ph-arrows-merge mr-1"></i> 結合 (Merge)
+                <button onclick="switchTab('merge')" id="tab-merge" class="nav-pill">
+                    <div class="flex items-center gap-2">
+                        <i class="ph-bold ph-arrows-merge text-lg"></i>
+                        <span>結合</span>
+                    </div>
+                </button>
+                <button onclick="switchTab('organize')" id="tab-organize" class="nav-pill">
+                    <div class="flex items-center gap-2">
+                        <i class="ph-bold ph-squares-four text-lg"></i>
+                        <span>整理</span>
+                    </div>
                 </button>
             </div>
         </div>
@@ -102,93 +199,105 @@
         <!-- ========================================== -->
         <div id="view-split" class="tab-content active">
             <!-- Step 1: Upload Area -->
-            <div id="split-upload-section" class="bg-white rounded-xl shadow-lg p-8 transition-all duration-300">
-                <h2 class="text-lg font-bold mb-4 flex items-center gap-2">
-                    <span class="bg-indigo-100 text-indigo-600 w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold">1</span>
+            <div id="split-upload-section" class="bg-white rounded-2xl shadow-sm border border-slate-100 p-8 transition-all duration-300 max-w-3xl mx-auto">
+                <h2 class="text-lg font-bold mb-6 flex items-center gap-3 text-slate-800">
+                    <span class="bg-indigo-50 text-indigo-600 w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold ring-1 ring-indigo-100">1</span>
                     PDFをアップロード
                 </h2>
                 
-                <div id="split-drop-zone" class="border-2 border-dashed border-gray-300 rounded-lg p-10 text-center cursor-pointer transition-colors duration-200 hover:bg-gray-50 hover:border-indigo-400">
+                <div id="split-drop-zone" class="group border-2 border-dashed border-slate-300 rounded-xl p-12 text-center cursor-pointer transition-all duration-200 hover:bg-slate-50 hover:border-indigo-400">
                     <input type="file" id="split-file-input" class="hidden" accept="application/pdf" multiple>
-                    <div class="flex flex-col items-center pointer-events-none">
-                        <i class="ph ph-files text-5xl text-gray-400 mb-4"></i>
-                        <p class="text-lg font-medium text-gray-700">分割したいファイルをドロップ</p>
-                        <p class="text-sm text-gray-500 mt-1">またはクリックして選択（複数可）</p>
+                    <div class="flex flex-col items-center pointer-events-none transform transition-transform group-hover:scale-105">
+                        <div class="bg-slate-50 p-4 rounded-full mb-4 group-hover:bg-indigo-50 transition-colors">
+                            <i class="ph-duotone ph-files text-4xl text-slate-400 group-hover:text-indigo-500 transition-colors"></i>
+                        </div>
+                        <p class="text-lg font-bold text-slate-700">ここにファイルをドロップ</p>
+                        <p class="text-sm text-slate-500 mt-2">またはクリックしてファイルを選択（複数可）</p>
                     </div>
                 </div>
             </div>
 
             <!-- Step 2: Configuration Area -->
-            <div id="split-config-section" class="bg-white rounded-xl shadow-lg p-8 mt-6 hidden opacity-0 transition-opacity duration-500">
-                <div class="flex justify-between items-start mb-6 border-b pb-4">
+            <div id="split-config-section" class="bg-white rounded-2xl shadow-sm border border-slate-100 p-8 mt-6 hidden opacity-0 transition-opacity duration-500 max-w-3xl mx-auto">
+                <div class="flex justify-between items-start mb-6 border-b border-slate-100 pb-4">
                     <div class="flex-1">
-                        <h2 class="text-lg font-bold flex items-center gap-2">
-                            <span class="bg-indigo-100 text-indigo-600 w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold">2</span>
+                        <h2 class="text-lg font-bold flex items-center gap-3 text-slate-800">
+                            <span class="bg-indigo-50 text-indigo-600 w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold ring-1 ring-indigo-100">2</span>
                             分割設定
                         </h2>
-                        <div id="split-file-info" class="mt-2 text-sm text-gray-600 flex flex-wrap items-center gap-2 ml-10"></div>
+                        <div id="split-file-info" class="mt-3 text-sm text-slate-600 flex flex-wrap items-center gap-3 ml-11"></div>
                     </div>
-                    <button id="split-reset-btn" class="text-gray-400 hover:text-red-500 transition-colors p-2 ml-4">
-                        <i class="ph ph-trash text-xl"></i>
+                    <button id="split-reset-btn" class="text-slate-400 hover:text-red-500 hover:bg-red-50 p-2 rounded-lg transition-colors ml-4" title="リセット">
+                        <i class="ph-bold ph-trash text-xl"></i>
                     </button>
                 </div>
 
-                <div id="split-multi-notice" class="hidden mb-6 bg-yellow-50 border-l-4 border-yellow-400 p-4">
-                    <div class="flex">
-                        <div class="flex-shrink-0"><i class="ph-fill ph-warning text-yellow-400"></i></div>
-                        <div class="ml-3"><p class="text-sm text-yellow-700">複数ファイル選択中：一括して<span class="font-bold">「全ページ分割」</span>のみ実行可能です。</p></div>
+                <div id="split-multi-notice" class="hidden mb-8 bg-amber-50 border border-amber-200 rounded-lg p-4 flex items-start gap-3">
+                    <i class="ph-fill ph-warning-circle text-amber-500 text-xl mt-0.5"></i>
+                    <div>
+                        <p class="text-sm font-bold text-amber-800 mb-1">一括分割モード</p>
+                        <p class="text-xs text-amber-700">複数ファイルが選択されています。すべてのファイルを「1ページずつ」に分割します。</p>
                     </div>
                 </div>
 
                 <!-- Split Mode Selection -->
                 <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-8">
-                    <label class="cursor-pointer relative">
+                    <label class="cursor-pointer relative group">
                         <input type="radio" name="split-mode" value="all" class="peer sr-only" checked>
-                        <div class="p-4 border rounded-lg hover:bg-gray-50 peer-checked:border-indigo-600 peer-checked:bg-indigo-50 peer-checked:ring-1 peer-checked:ring-indigo-600 transition-all h-full">
+                        <div class="p-5 border-2 border-slate-200 rounded-xl hover:border-indigo-300 hover:bg-slate-50 peer-checked:border-indigo-600 peer-checked:bg-indigo-50/50 peer-checked:ring-1 peer-checked:ring-indigo-600 transition-all h-full">
                             <div class="flex items-center gap-3 mb-2">
-                                <i class="ph ph-stack text-2xl text-indigo-600"></i>
-                                <span class="font-bold text-gray-800">全ページ分割</span>
+                                <div class="bg-white p-1.5 rounded-lg shadow-sm text-indigo-600 border border-slate-100">
+                                    <i class="ph-bold ph-stack text-xl"></i>
+                                </div>
+                                <span class="font-bold text-slate-800">全ページ分割</span>
                             </div>
-                            <p class="text-xs text-gray-500 pl-9">各ページを個別のPDFにします。</p>
+                            <p class="text-xs text-slate-500 leading-relaxed pl-[3.25rem]">すべてのページをバラバラにして、個別のPDFファイルとして保存します。</p>
                         </div>
                     </label>
 
-                    <label class="cursor-pointer relative" id="split-range-mode-label">
+                    <label class="cursor-pointer relative group" id="split-range-mode-label">
                         <input type="radio" name="split-mode" value="range" class="peer sr-only">
-                        <div class="p-4 border rounded-lg hover:bg-gray-50 peer-checked:border-indigo-600 peer-checked:bg-indigo-50 peer-checked:ring-1 peer-checked:ring-indigo-600 transition-all h-full peer-disabled:opacity-50">
+                        <div class="p-5 border-2 border-slate-200 rounded-xl hover:border-indigo-300 hover:bg-slate-50 peer-checked:border-indigo-600 peer-checked:bg-indigo-50/50 peer-checked:ring-1 peer-checked:ring-indigo-600 transition-all h-full peer-disabled:opacity-50 peer-disabled:cursor-not-allowed peer-disabled:hover:bg-white peer-disabled:hover:border-slate-200">
                             <div class="flex items-center gap-3 mb-2">
-                                <i class="ph ph-scissors text-2xl text-indigo-600"></i>
-                                <span class="font-bold text-gray-800">指定位置で分割</span>
+                                <div class="bg-white p-1.5 rounded-lg shadow-sm text-indigo-600 border border-slate-100">
+                                    <i class="ph-bold ph-scissors text-xl"></i>
+                                </div>
+                                <span class="font-bold text-slate-800">指定位置で分割</span>
                             </div>
-                            <p class="text-xs text-gray-500 pl-9">指定ページで2つに分割します。</p>
+                            <p class="text-xs text-slate-500 leading-relaxed pl-[3.25rem]">指定したページ番号の前後で、ファイルを2つに分割します。</p>
                         </div>
                     </label>
                 </div>
 
                 <!-- Range Slider -->
-                <div id="split-range-options" class="hidden pl-4 border-l-4 border-indigo-100 mb-8">
-                    <label class="block text-sm font-medium text-gray-700 mb-2">分割するページ位置:</label>
-                    <div class="flex items-center gap-4">
-                        <span class="text-sm font-bold text-indigo-600">P.1</span>
-                        <input type="range" id="split-page-slider" min="2" max="10" value="2" class="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-indigo-600">
-                        <span id="split-max-page-label" class="text-sm font-bold text-indigo-600">P.10</span>
+                <div id="split-range-options" class="hidden pl-6 border-l-2 border-indigo-100 mb-8 ml-2">
+                    <label class="block text-sm font-bold text-slate-700 mb-4">分割する位置を選択:</label>
+                    <div class="flex items-center gap-4 px-2">
+                        <span class="text-xs font-bold text-indigo-600 bg-indigo-50 px-2 py-1 rounded">P.1</span>
+                        <input type="range" id="split-page-slider" min="2" max="10" value="2" class="w-full h-2 bg-slate-200 rounded-lg appearance-none cursor-pointer accent-indigo-600">
+                        <span id="split-max-page-label" class="text-xs font-bold text-indigo-600 bg-indigo-50 px-2 py-1 rounded">P.10</span>
                     </div>
-                    <div class="mt-4 flex flex-col sm:flex-row gap-4 text-sm bg-gray-50 p-3 rounded text-gray-600 border border-gray-100">
-                        <div class="flex-1 text-center">
-                            <span class="block font-bold text-gray-800 mb-1">ファイル 1</span>
-                            <span id="split-file1-range">ページ 1 - 1</span>
+                    
+                    <div class="mt-6 flex flex-col sm:flex-row gap-4">
+                        <div class="flex-1 bg-slate-50 p-3 rounded-lg border border-slate-200 text-center relative overflow-hidden">
+                            <div class="absolute top-0 left-0 w-1 h-full bg-indigo-500"></div>
+                            <span class="block text-xs font-bold text-slate-500 uppercase mb-1">ファイル 1</span>
+                            <span id="split-file1-range" class="text-sm font-bold text-slate-800">ページ 1 - 1</span>
                         </div>
-                        <div class="flex items-center justify-center text-gray-400"><i class="ph ph-arrow-right"></i></div>
-                        <div class="flex-1 text-center">
-                            <span class="block font-bold text-gray-800 mb-1">ファイル 2</span>
-                            <span id="split-file2-range">ページ 2 - End</span>
+                        <div class="flex items-center justify-center text-slate-300">
+                            <i class="ph-bold ph-arrow-right text-xl"></i>
+                        </div>
+                        <div class="flex-1 bg-slate-50 p-3 rounded-lg border border-slate-200 text-center relative overflow-hidden">
+                            <div class="absolute top-0 left-0 w-1 h-full bg-indigo-500"></div>
+                            <span class="block text-xs font-bold text-slate-500 uppercase mb-1">ファイル 2</span>
+                            <span id="split-file2-range" class="text-sm font-bold text-slate-800">ページ 2 - End</span>
                         </div>
                     </div>
                 </div>
 
-                <button id="split-process-btn" class="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-4 px-6 rounded-lg shadow-md hover:shadow-lg transform transition hover:-translate-y-0.5 flex items-center justify-center gap-2 disabled:opacity-50">
-                    <span>分割してZIPをダウンロード</span>
-                    <i class="ph ph-download-simple text-xl"></i>
+                <button id="split-process-btn" class="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-4 px-6 rounded-xl shadow-lg shadow-indigo-200 hover:shadow-indigo-300 transform transition-all active:scale-[0.98] flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed">
+                    <span>分割してダウンロード</span>
+                    <i class="ph-bold ph-download-simple text-xl"></i>
                 </button>
             </div>
         </div>
@@ -197,76 +306,170 @@
         <!-- MERGE TOOL SECTION -->
         <!-- ========================================== -->
         <div id="view-merge" class="tab-content">
-            <div class="bg-white rounded-xl shadow-lg p-8">
-                <h2 class="text-lg font-bold mb-4 flex items-center gap-2">
-                    <span class="bg-indigo-100 text-indigo-600 w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold">1</span>
-                    結合するPDFを追加＆並び替え
+            <div class="bg-white rounded-2xl shadow-sm border border-slate-100 p-8 max-w-3xl mx-auto">
+                <h2 class="text-lg font-bold mb-6 flex items-center gap-3 text-slate-800">
+                    <span class="bg-indigo-50 text-indigo-600 w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold ring-1 ring-indigo-100">1</span>
+                    結合するPDFを追加 & 並び替え
                 </h2>
 
-                <!-- Small Upload Area -->
-                <div id="merge-drop-zone" class="border-2 border-dashed border-gray-300 rounded-lg p-6 mb-6 text-center cursor-pointer transition-colors duration-200 hover:bg-gray-50 hover:border-indigo-400">
+                <div id="merge-drop-zone" class="border-2 border-dashed border-slate-300 rounded-xl p-6 mb-8 text-center cursor-pointer transition-colors duration-200 hover:bg-slate-50 hover:border-indigo-400">
                     <input type="file" id="merge-file-input" class="hidden" accept="application/pdf" multiple>
                     <div class="flex flex-col items-center pointer-events-none">
-                        <i class="ph ph-plus-circle text-3xl text-indigo-500 mb-2"></i>
-                        <p class="text-sm font-medium text-gray-700">ファイルを追加 (クリックまたはドロップ)</p>
+                        <div class="bg-indigo-50 text-indigo-500 w-12 h-12 rounded-full flex items-center justify-center mb-3">
+                            <i class="ph-bold ph-plus text-2xl"></i>
+                        </div>
+                        <p class="text-sm font-bold text-slate-700">ファイルを追加</p>
+                        <p class="text-xs text-slate-500 mt-1">クリックまたはドロップ</p>
                     </div>
                 </div>
 
-                <!-- Merge List -->
-                <div id="merge-list-container" class="mb-8">
-                    <p id="merge-empty-msg" class="text-center text-gray-400 text-sm py-4">まだファイルが選択されていません</p>
-                    <ul id="merge-list" class="space-y-2">
-                        <!-- List Items Injected Here -->
-                    </ul>
+                <div id="merge-list-container" class="mb-8 min-h-[100px]">
+                    <div id="merge-empty-msg" class="flex flex-col items-center justify-center py-10 text-slate-400 border border-slate-100 rounded-xl bg-slate-50/50">
+                        <i class="ph-duotone ph-files text-3xl mb-2 opacity-50"></i>
+                        <p class="text-sm">まだファイルがありません</p>
+                    </div>
+                    <ul id="merge-list" class="space-y-3"></ul>
                 </div>
 
-                <button id="merge-process-btn" class="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-4 px-6 rounded-lg shadow-md hover:shadow-lg transform transition hover:-translate-y-0.5 flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed" disabled>
-                    <span>結合してPDFをダウンロード</span>
-                    <i class="ph ph-file-pdf text-xl"></i>
+                <button id="merge-process-btn" class="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-4 px-6 rounded-xl shadow-lg shadow-indigo-200 hover:shadow-indigo-300 transform transition-all active:scale-[0.98] flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed disabled:shadow-none" disabled>
+                    <span>結合してダウンロード</span>
+                    <i class="ph-bold ph-file-pdf text-xl"></i>
                 </button>
             </div>
         </div>
 
-        <!-- Shared Status Message -->
-        <div id="status-msg" class="text-center mt-6 text-sm text-gray-500 hidden bg-white p-3 rounded-lg shadow-sm max-w-xs mx-auto">
-            <div class="flex items-center justify-center gap-2">
-                <div class="loader"></div>
-                <span id="status-text">処理中...</span>
+        <!-- ========================================== -->
+        <!-- ORGANIZE TOOL SECTION -->
+        <!-- ========================================== -->
+        <div id="view-organize" class="tab-content">
+            <!-- Upload Area -->
+            <div id="org-upload-section" class="bg-white rounded-2xl shadow-sm border border-slate-100 p-8 transition-all duration-300 max-w-3xl mx-auto">
+                <h2 class="text-lg font-bold mb-6 flex items-center gap-3 text-slate-800">
+                    <span class="bg-indigo-50 text-indigo-600 w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold ring-1 ring-indigo-100">1</span>
+                    編集するPDFをアップロード
+                </h2>
+                
+                <div id="org-drop-zone" class="group border-2 border-dashed border-slate-300 rounded-xl p-12 text-center cursor-pointer transition-all duration-200 hover:bg-slate-50 hover:border-indigo-400">
+                    <input type="file" id="org-file-input" class="hidden" accept="application/pdf">
+                    <div class="flex flex-col items-center pointer-events-none transform transition-transform group-hover:scale-105">
+                        <div class="bg-slate-50 p-4 rounded-full mb-4 group-hover:bg-indigo-50 transition-colors">
+                            <i class="ph-duotone ph-squares-four text-4xl text-slate-400 group-hover:text-indigo-500 transition-colors"></i>
+                        </div>
+                        <p class="text-lg font-bold text-slate-700">編集したいファイルをドロップ</p>
+                        <p class="text-sm text-slate-500 mt-2">またはクリックして選択（1ファイル）</p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Workspace -->
+            <div id="org-workspace" class="bg-white rounded-2xl shadow-sm border border-slate-100 p-4 sm:p-8 mt-4 hidden opacity-0 transition-opacity duration-500">
+                <!-- Header / Toolbar -->
+                <div class="flex flex-col lg:flex-row justify-between items-start lg:items-center mb-6 pb-6 border-b border-slate-100 gap-6">
+                    <div>
+                        <h2 class="text-lg font-bold flex items-center gap-3 text-slate-800">
+                            <span class="bg-indigo-50 text-indigo-600 w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold ring-1 ring-indigo-100">2</span>
+                            ページの整理
+                        </h2>
+                        <div id="org-file-info" class="mt-2 text-sm text-slate-600 ml-11"></div>
+                    </div>
+                    
+                    <div class="flex gap-2 w-full lg:w-auto justify-end">
+                        <button onclick="orgSelectAll()" class="px-4 py-2 text-xs font-bold bg-slate-100 hover:bg-slate-200 rounded-lg text-slate-600 transition-colors">全選択</button>
+                        <button onclick="orgDeselectAll()" class="px-4 py-2 text-xs font-bold bg-slate-100 hover:bg-slate-200 rounded-lg text-slate-600 transition-colors">全解除</button>
+                        <div class="w-px h-auto bg-slate-200 mx-1"></div>
+                        <button id="org-reset-btn" class="px-3 py-2 text-slate-400 hover:text-indigo-500 hover:bg-indigo-50 rounded-lg transition-colors flex items-center gap-1 group relative" title="編集をリセット（最初に戻す）">
+                            <i class="ph-bold ph-arrow-counter-clockwise text-lg"></i>
+                            <span class="text-xs font-bold hidden group-hover:inline-block">リセット</span>
+                        </button>
+                        <button id="org-close-btn" class="px-3 py-2 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors flex items-center gap-1 group relative ml-1" title="ファイルを閉じる">
+                            <i class="ph-bold ph-trash text-lg"></i>
+                            <span class="text-xs font-bold hidden group-hover:inline-block">閉じる</span>
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Action Bar -->
+                <div class="sticky top-20 z-10 bg-slate-50/90 backdrop-blur border border-slate-200 p-3 rounded-xl shadow-sm mb-8 flex flex-col md:flex-row items-center gap-4 justify-between">
+                    <!-- Left: Tools -->
+                    <div class="flex flex-wrap items-center gap-4 w-full md:w-auto justify-center md:justify-start">
+                        <!-- Rotate -->
+                        <div class="flex items-center gap-1 bg-white p-1 rounded-lg border border-slate-200">
+                            <button onclick="orgRotateSelected(-90)" class="p-2 text-slate-500 hover:bg-indigo-50 hover:text-indigo-600 rounded-md transition-colors" title="左回転">
+                                <i class="ph-bold ph-arrow-counter-clockwise text-lg"></i>
+                            </button>
+                            <div class="w-px h-4 bg-slate-200"></div>
+                            <button onclick="orgRotateSelected(90)" class="p-2 text-slate-500 hover:bg-indigo-50 hover:text-indigo-600 rounded-md transition-colors" title="右回転">
+                                <i class="ph-bold ph-arrow-clockwise text-lg"></i>
+                            </button>
+                        </div>
+
+                        <!-- Delete -->
+                        <div class="flex items-center gap-2 bg-white p-1 pr-2 rounded-lg border border-slate-200">
+                            <button onclick="orgToggleDeleteSelected()" class="p-2 text-slate-500 hover:bg-red-50 hover:text-red-600 rounded-md transition-colors" title="選択ページを削除/復元">
+                                <i class="ph-bold ph-trash text-lg"></i>
+                            </button>
+                            <div class="w-px h-4 bg-slate-200"></div>
+                            <input type="text" id="org-delete-input" placeholder="例: 1, 3-5" class="w-24 text-xs font-bold bg-transparent border-none focus:ring-0 p-0 text-slate-600 placeholder-slate-300">
+                            <button onclick="orgDeleteByInput()" class="text-xs font-bold text-slate-500 hover:text-red-600 px-2 py-1 rounded bg-slate-100 hover:bg-red-50 transition-colors">指定削除</button>
+                        </div>
+                    </div>
+
+                    <!-- Right: Save -->
+                    <div class="w-full md:w-auto">
+                        <button id="org-process-btn" class="w-full md:w-auto px-6 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-lg shadow-md shadow-indigo-200 hover:shadow-indigo-300 transform transition-all active:scale-[0.98] flex items-center justify-center gap-2">
+                            <span>保存する</span>
+                            <i class="ph-bold ph-download-simple"></i>
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Page Grid -->
+                <div id="org-page-grid" class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-6 pb-8">
+                    <!-- Pages generated by JS -->
+                </div>
+
             </div>
         </div>
+
+        <!-- Shared Status Message -->
+        <div id="status-msg" class="fixed bottom-8 left-1/2 transform -translate-x-1/2 z-50 text-center text-sm font-bold text-slate-700 hidden bg-white/90 backdrop-blur px-6 py-3 rounded-full shadow-xl border border-slate-200 flex items-center gap-3 animate-bounce-in">
+            <div class="loader"></div>
+            <span id="status-text">処理中...</span>
+        </div>
+
+        <!-- Toast Message (Dynamically inserted) -->
+        <div id="toast-container" class="fixed bottom-24 left-1/2 transform -translate-x-1/2 z-50 pointer-events-none"></div>
 
     </main>
 
     <!-- Footer -->
-    <footer class="bg-gray-100 py-6 mt-auto">
+    <footer class="border-t border-slate-200 bg-white py-8 mt-auto">
         <div class="max-w-4xl mx-auto px-4 text-center">
-            <p class="text-xs text-gray-500">&copy; 2026 PDF Tools. Secure Local Processing.</p>
+            <p class="text-xs text-slate-400 font-medium">&copy; 2026 PDF Tools. Secure Local Processing.</p>
         </div>
     </footer>
 
     <!-- Script -->
     <script>
         // === GLOBAL & TABS ===
-        let currentMode = 'split'; // 'split' or 'merge'
+        let currentMode = 'split'; 
 
         function switchTab(mode) {
             currentMode = mode;
-            
-            // Tab Styles
-            document.getElementById('tab-split').className = mode === 'split' 
-                ? 'px-6 py-2 rounded-lg text-sm font-bold transition-all bg-indigo-600 text-white shadow-md'
-                : 'px-6 py-2 rounded-lg text-sm font-bold transition-all text-gray-500 hover:text-gray-700 hover:bg-gray-100';
-            
-            document.getElementById('tab-merge').className = mode === 'merge' 
-                ? 'px-6 py-2 rounded-lg text-sm font-bold transition-all bg-indigo-600 text-white shadow-md'
-                : 'px-6 py-2 rounded-lg text-sm font-bold transition-all text-gray-500 hover:text-gray-700 hover:bg-gray-100';
-
-            // Content Visibility
-            document.getElementById('view-split').className = mode === 'split' ? 'tab-content active' : 'tab-content';
-            document.getElementById('view-merge').className = mode === 'merge' ? 'tab-content active' : 'tab-content';
+            ['split', 'merge', 'organize'].forEach(m => {
+                const btn = document.getElementById(`tab-${m}`);
+                const view = document.getElementById(`view-${m}`);
+                if (m === mode) {
+                    btn.classList.add('active');
+                    view.classList.add('active');
+                } else {
+                    btn.classList.remove('active');
+                    view.classList.remove('active');
+                }
+            });
         }
 
-        // === SHARED UTILS ===
+        // === UTILS ===
         const statusMsg = document.getElementById('status-msg');
         const statusText = document.getElementById('status-text');
 
@@ -278,9 +481,335 @@
         function hideStatus() {
             statusMsg.classList.add('hidden');
         }
+        
+        function showToast(msg) {
+            const container = document.getElementById('toast-container');
+            const el = document.createElement('div');
+            el.className = "toast bg-slate-800 text-white text-xs font-bold px-4 py-2 rounded-lg shadow-lg mb-2 whitespace-nowrap";
+            el.textContent = msg;
+            container.appendChild(el);
+            setTimeout(() => el.remove(), 3000);
+        }
 
         // ==========================================
-        // SPLIT LOGIC (Previous Implementation)
+        // ORGANIZE LOGIC
+        // ==========================================
+        const orgDropZone = document.getElementById('org-drop-zone');
+        const orgFileInput = document.getElementById('org-file-input');
+        const orgWorkspace = document.getElementById('org-workspace');
+        const orgPageGrid = document.getElementById('org-page-grid');
+        const orgFileInfo = document.getElementById('org-file-info');
+        const orgResetBtn = document.getElementById('org-reset-btn');
+        const orgCloseBtn = document.getElementById('org-close-btn');
+        const orgProcessBtn = document.getElementById('org-process-btn');
+
+        let orgFile = null;
+        let orgPdfDoc = null; 
+        let orgPreviewDoc = null; 
+        let orgPagesState = []; 
+
+        orgDropZone.addEventListener('dragover', (e) => { e.preventDefault(); orgDropZone.classList.add('drag-active'); });
+        orgDropZone.addEventListener('dragleave', () => orgDropZone.classList.remove('drag-active'));
+        orgDropZone.addEventListener('drop', (e) => {
+            e.preventDefault();
+            orgDropZone.classList.remove('drag-active');
+            if(e.dataTransfer.files.length) handleOrgFile(e.dataTransfer.files[0]);
+        });
+        orgDropZone.addEventListener('click', () => orgFileInput.click());
+        orgFileInput.addEventListener('change', (e) => { if(e.target.files.length) handleOrgFile(e.target.files[0]); });
+
+        async function handleOrgFile(file) {
+            if (file.type !== 'application/pdf') { showToast('PDFファイルのみ対応しています'); return; }
+            
+            showStatus('PDFを読み込み中...');
+            try {
+                orgFile = file;
+                const buffer = await file.arrayBuffer();
+                
+                orgPdfDoc = await PDFLib.PDFDocument.load(buffer);
+                
+                const bufferForPreview = buffer.slice(0);
+                const loadingTask = pdfjsLib.getDocument(bufferForPreview);
+                orgPreviewDoc = await loadingTask.promise;
+                
+                const pageCount = orgPdfDoc.getPageCount();
+                orgPagesState = [];
+                for(let i=0; i<pageCount; i++) {
+                    const page = orgPdfDoc.getPage(i);
+                    const currentRot = page.getRotation().angle;
+                    orgPagesState.push({
+                        index: i,
+                        originalRotation: currentRot,
+                        visualRotation: 0, // CSS累積回転用（0スタート）
+                        deleted: false,
+                        selected: false
+                    });
+                }
+
+                await renderOrgGrid();
+                
+                orgFileInfo.innerHTML = `<span class="font-bold text-slate-800">${file.name}</span> <span class="text-xs bg-slate-100 text-slate-500 font-bold px-2 py-0.5 rounded ml-2">${pageCount} Pages</span>`;
+                document.getElementById('org-upload-section').classList.add('hidden');
+                orgWorkspace.classList.remove('hidden');
+                setTimeout(() => orgWorkspace.classList.remove('opacity-0'), 10);
+
+            } catch(e) {
+                console.error(e);
+                showToast('読み込みに失敗しました');
+            } finally {
+                hideStatus();
+            }
+        }
+
+        async function renderOrgGrid() {
+            orgPageGrid.innerHTML = '';
+            
+            orgPagesState.forEach((pageState, i) => {
+                const el = document.createElement('div');
+                el.className = `page-card relative bg-white border-2 rounded-xl p-3 cursor-pointer flex flex-col items-center justify-between aspect-[3/4] group ${pageState.selected ? 'selected' : 'border-slate-100 hover:border-indigo-200'} ${pageState.deleted ? 'deleted' : ''}`;
+                el.onclick = () => toggleOrgPageSelect(i);
+                
+                const canvasId = `org-preview-${i}`;
+
+                el.innerHTML = `
+                    <div class="absolute top-2 right-2 w-6 h-6 rounded-full border border-slate-200 flex items-center justify-center bg-white z-10 transition-colors ${pageState.selected ? 'border-indigo-600' : ''}">
+                        ${pageState.selected ? '<div class="w-3 h-3 bg-indigo-600 rounded-full"></div>' : ''}
+                    </div>
+                    
+                    <div class="preview-canvas-container bg-slate-50 rounded-lg">
+                        <canvas id="${canvasId}" class="preview-canvas"></canvas>
+                    </div>
+                    
+                    <div class="mt-3 text-xs font-bold text-slate-400 bg-slate-50 px-2 py-0.5 rounded">${i + 1}</div>
+                    ${pageState.deleted ? '<div class="absolute inset-0 flex items-center justify-center bg-red-50/80 rounded-xl text-red-500 font-black text-xl pointer-events-none border-2 border-red-100 z-20">削除</div>' : ''}
+                `;
+                orgPageGrid.appendChild(el);
+            });
+
+            for (let i = 0; i < orgPagesState.length; i++) {
+                renderPageThumbnail(i);
+            }
+        }
+
+        async function renderPageThumbnail(index) {
+            const pageState = orgPagesState[index];
+            const canvasId = `org-preview-${index}`;
+            const canvas = document.getElementById(canvasId);
+            if (!canvas) return;
+
+            try {
+                const page = await orgPreviewDoc.getPage(index + 1);
+                const viewport = page.getViewport({ scale: 0.4 });
+                
+                const context = canvas.getContext('2d');
+                canvas.height = viewport.height;
+                canvas.width = viewport.width;
+
+                const renderContext = {
+                    canvasContext: context,
+                    viewport: viewport
+                };
+                
+                await page.render(renderContext).promise;
+                updatePageVisualRotation(index);
+                
+            } catch (err) {
+                console.error("Page render error:", err);
+            }
+        }
+
+        function updatePageVisualRotation(index) {
+            const canvas = document.getElementById(`org-preview-${index}`);
+            if (canvas) {
+                const pageState = orgPagesState[index];
+                if (pageState) {
+                    // CSSでは累積角度をそのまま使用（逆回転アニメーション防止）
+                    canvas.style.transform = `rotate(${pageState.visualRotation}deg)`;
+                }
+            }
+        }
+
+        function toggleOrgPageSelect(index) {
+            orgPagesState[index].selected = !orgPagesState[index].selected;
+            
+            const el = orgPageGrid.children[index];
+            if (orgPagesState[index].selected) {
+                el.classList.add('selected', 'border-indigo-600');
+                el.classList.remove('border-slate-100');
+                el.querySelector('.w-6').classList.add('border-indigo-600');
+                el.querySelector('.w-6').innerHTML = '<div class="w-3 h-3 bg-indigo-600 rounded-full"></div>';
+            } else {
+                el.classList.remove('selected', 'border-indigo-600');
+                el.classList.add('border-slate-100');
+                el.querySelector('.w-6').classList.remove('border-indigo-600');
+                el.querySelector('.w-6').innerHTML = '';
+            }
+        }
+
+        function orgSelectAll() {
+            orgPagesState.forEach((p, i) => {
+                p.selected = true;
+                const el = orgPageGrid.children[i];
+                el.classList.add('selected', 'border-indigo-600');
+                el.classList.remove('border-slate-100');
+                el.querySelector('.w-6').classList.add('border-indigo-600');
+                el.querySelector('.w-6').innerHTML = '<div class="w-3 h-3 bg-indigo-600 rounded-full"></div>';
+            });
+        }
+
+        function orgDeselectAll() {
+            orgPagesState.forEach((p, i) => {
+                p.selected = false;
+                const el = orgPageGrid.children[i];
+                el.classList.remove('selected', 'border-indigo-600');
+                el.classList.add('border-slate-100');
+                el.querySelector('.w-6').classList.remove('border-indigo-600');
+                el.querySelector('.w-6').innerHTML = '';
+            });
+        }
+
+        function orgRotateSelected(deg) {
+            orgPagesState.forEach((p, i) => {
+                if (p.selected) {
+                    // 累積回転数を更新（無限に増減させる）
+                    p.visualRotation += deg;
+                    updatePageVisualRotation(i);
+                }
+            });
+        }
+
+        function orgToggleDeleteSelected() {
+            orgPagesState.forEach((p, i) => {
+                if (p.selected) {
+                    p.deleted = !p.deleted;
+                    p.selected = false; 
+                    
+                    const el = orgPageGrid.children[i];
+                    el.classList.remove('selected', 'border-indigo-600');
+                    el.classList.add('border-slate-100');
+                    el.querySelector('.w-6').classList.remove('border-indigo-600');
+                    el.querySelector('.w-6').innerHTML = '';
+                    
+                    if (p.deleted) {
+                        el.classList.add('deleted');
+                        if(!el.querySelector('.deleted-overlay')) {
+                            const overlay = document.createElement('div');
+                            overlay.className = "absolute inset-0 flex items-center justify-center bg-red-50/80 rounded-xl text-red-500 font-black text-xl pointer-events-none border-2 border-red-100 z-20 deleted-overlay";
+                            overlay.innerText = "削除";
+                            el.appendChild(overlay);
+                        }
+                    } else {
+                        el.classList.remove('deleted');
+                        const overlay = el.querySelector('.deleted-overlay');
+                        if(overlay) overlay.remove();
+                    }
+                }
+            });
+        }
+
+        function orgDeleteByInput() {
+            const val = document.getElementById('org-delete-input').value.trim();
+            if (!val) return;
+
+            const ranges = val.split(',');
+            const toDelete = new Set();
+
+            ranges.forEach(r => {
+                r = r.trim();
+                if (r.includes('-')) {
+                    const [start, end] = r.split('-').map(Number);
+                    if (!isNaN(start) && !isNaN(end)) {
+                        for(let i=start; i<=end; i++) toDelete.add(i-1);
+                    }
+                } else {
+                    const num = Number(r);
+                    if (!isNaN(num)) toDelete.add(num-1);
+                }
+            });
+
+            let changed = false;
+            orgPagesState.forEach((p, i) => {
+                if (toDelete.has(p.index)) {
+                    p.deleted = true;
+                    changed = true;
+                    const el = orgPageGrid.children[i];
+                    el.classList.add('deleted');
+                    if(!el.querySelector('.deleted-overlay')) {
+                        const overlay = document.createElement('div');
+                        overlay.className = "absolute inset-0 flex items-center justify-center bg-red-50/80 rounded-xl text-red-500 font-black text-xl pointer-events-none border-2 border-red-100 z-20 deleted-overlay";
+                        overlay.innerText = "削除";
+                        el.appendChild(overlay);
+                    }
+                }
+            });
+            
+            if (changed) {
+                document.getElementById('org-delete-input').value = '';
+            } else {
+                showToast('指定されたページ番号が見つかりませんでした');
+            }
+        }
+
+        // --- リセット ---
+        orgResetBtn.addEventListener('click', () => {
+            handleOrgFile(orgFile);
+            orgFileInput.value = '';
+            showToast("編集をリセットしました");
+        });
+
+        // --- 閉じる ---
+        orgCloseBtn.addEventListener('click', () => {
+            orgFile = null;
+            orgPdfDoc = null;
+            orgPagesState = [];
+            orgFileInput.value = '';
+            orgWorkspace.classList.add('hidden');
+            document.getElementById('org-upload-section').classList.remove('hidden');
+            orgDropZone.classList.remove('drag-active');
+            showToast("ファイルを閉じました");
+        });
+
+        orgProcessBtn.addEventListener('click', async () => {
+            if (!orgPdfDoc) return;
+            const alivePages = orgPagesState.filter(p => !p.deleted);
+            if (alivePages.length === 0) {
+                showToast('すべてのページが削除されています');
+                return;
+            }
+            orgProcessBtn.disabled = true;
+            showStatus('PDFを生成中...');
+            try {
+                const newPdf = await PDFLib.PDFDocument.create();
+                const indicesToCopy = alivePages.map(p => p.index);
+                const copiedPages = await newPdf.copyPages(orgPdfDoc, indicesToCopy);
+                
+                alivePages.forEach((state, i) => {
+                    const page = copiedPages[i];
+                    
+                    // 保存時にのみ、累積回転数を含めた最終的な角度を計算して正規化(0-360)
+                    // originalRotation + visualRotation
+                    const finalRotation = (state.originalRotation + state.visualRotation) % 360;
+                    // 負の値の正規化 (-90 -> 270)
+                    const normalizedRotation = finalRotation < 0 ? finalRotation + 360 : finalRotation;
+                    
+                    page.setRotation(PDFLib.degrees(normalizedRotation));
+                    newPdf.addPage(page);
+                });
+                
+                const pdfBytes = await newPdf.save();
+                const blob = new Blob([pdfBytes], { type: 'application/pdf' });
+                saveAs(blob, `edited_${orgFile.name}`);
+            } catch (err) {
+                console.error(err);
+                showToast('保存エラーが発生しました');
+            } finally {
+                orgProcessBtn.disabled = false;
+                hideStatus();
+            }
+        });
+
+        // ==========================================
+        // SPLIT & MERGE LOGIC
         // ==========================================
         const splitDropZone = document.getElementById('split-drop-zone');
         const splitFileInput = document.getElementById('split-file-input');
@@ -299,7 +828,6 @@
         let singlePdfDoc = null;
         let singlePdfTotalPages = 0;
 
-        // Split Drag & Drop
         splitDropZone.addEventListener('dragover', (e) => { e.preventDefault(); splitDropZone.classList.add('drag-active'); });
         splitDropZone.addEventListener('dragleave', () => splitDropZone.classList.remove('drag-active'));
         splitDropZone.addEventListener('drop', (e) => {
@@ -312,75 +840,48 @@
 
         async function handleSplitFiles(files) {
             const pdfFiles = Array.from(files).filter(f => f.type === 'application/pdf');
-            if (pdfFiles.length === 0) { alert('PDFのみ対応'); return; }
-            
+            if (pdfFiles.length === 0) { showToast('PDFのみ対応'); return; }
             splitFiles = pdfFiles;
             splitConfigSection.classList.remove('hidden');
             setTimeout(() => splitConfigSection.classList.remove('opacity-0'), 10);
-            
-            // Hide upload visual
-            splitDropZone.classList.add('bg-gray-50', 'border-gray-200');
-            splitDropZone.classList.remove('border-dashed', 'border-gray-300');
-            splitDropZone.querySelector('p').textContent = "ファイル変更";
+            document.getElementById('split-upload-section').classList.add('hidden');
 
-            if (splitFiles.length === 1) {
-                await setupSplitSingleMode(splitFiles[0]);
-            } else {
-                setupSplitMultiMode();
-            }
+            if (splitFiles.length === 1) await setupSplitSingleMode(splitFiles[0]);
+            else setupSplitMultiMode();
         }
 
         async function setupSplitSingleMode(file) {
             splitMultiNotice.classList.add('hidden');
             document.querySelector('input[value="range"]').disabled = false;
-            
             try {
                 const buffer = await file.arrayBuffer();
                 singlePdfDoc = await PDFLib.PDFDocument.load(buffer);
                 singlePdfTotalPages = singlePdfDoc.getPageCount();
-
-                splitFileInfo.innerHTML = `<i class="ph-fill ph-file-pdf text-red-500 text-lg"></i><span class="font-medium truncate max-w-[200px]">${file.name}</span><span class="bg-gray-200 text-xs px-2 py-0.5 rounded-full">${singlePdfTotalPages}P</span>`;
-
-                if(singlePdfTotalPages < 2) {
-                    alert('1ページのみのPDFは分割できません');
-                    resetSplit();
-                    return;
-                }
-
+                splitFileInfo.innerHTML = `<i class="ph-fill ph-file-pdf text-red-500"></i><span class="font-bold text-slate-700 truncate max-w-[200px]">${file.name}</span><span class="bg-slate-100 text-xs font-bold px-2 py-0.5 rounded ml-2">${singlePdfTotalPages}P</span>`;
+                if(singlePdfTotalPages < 2) { showToast('1ページのみのPDFは分割できません'); resetSplit(); return; }
                 splitPageSlider.max = singlePdfTotalPages;
                 splitPageSlider.value = Math.ceil(singlePdfTotalPages / 2);
                 splitMaxPageLabel.textContent = `P.${singlePdfTotalPages}`;
                 updateSplitRangeLabels();
-            } catch (err) {
-                alert('読み込みエラー');
-                resetSplit();
-            }
+            } catch (err) { showToast('読み込みエラー'); resetSplit(); }
         }
 
         function setupSplitMultiMode() {
             splitMultiNotice.classList.remove('hidden');
-            splitFileInfo.innerHTML = `<i class="ph-fill ph-files text-indigo-600 text-lg"></i><span class="font-medium">${splitFiles.length}ファイル選択中</span>`;
+            splitFileInfo.innerHTML = `<span class="font-bold text-indigo-600">${splitFiles.length}ファイル選択中</span>`;
             document.querySelector('input[value="all"]').checked = true;
             document.querySelector('input[value="range"]').disabled = true;
             splitRangeOptions.classList.add('hidden');
         }
 
         splitResetBtn.addEventListener('click', resetSplit);
-
         function resetSplit() {
-            splitFiles = [];
-            singlePdfDoc = null;
-            splitFileInput.value = '';
+            splitFiles = []; singlePdfDoc = null; splitFileInput.value = '';
             splitConfigSection.classList.add('hidden', 'opacity-0');
-            
-            splitDropZone.classList.remove('bg-gray-50', 'border-gray-200');
-            splitDropZone.classList.add('border-dashed', 'border-gray-300');
-            splitDropZone.querySelector('p').textContent = "分割したいファイルをドロップ";
-            hideStatus();
+            document.getElementById('split-upload-section').classList.remove('hidden');
             splitProcessBtn.disabled = false;
         }
 
-        // Split Mode Toggles
         document.querySelectorAll('input[name="split-mode"]').forEach(r => {
             r.addEventListener('change', (e) => {
                 if(e.target.value === 'range') splitRangeOptions.classList.remove('hidden');
@@ -389,7 +890,6 @@
         });
 
         splitPageSlider.addEventListener('input', updateSplitRangeLabels);
-
         function updateSplitRangeLabels() {
             if (!singlePdfTotalPages) return;
             const splitAt = parseInt(splitPageSlider.value);
@@ -397,17 +897,12 @@
             splitFile2Range.textContent = `ページ ${splitAt} - ${singlePdfTotalPages}`;
         }
 
-        // Split Process
         splitProcessBtn.addEventListener('click', async () => {
             if (splitFiles.length === 0) return;
             const mode = document.querySelector('input[name="split-mode"]:checked').value;
-            
-            splitProcessBtn.disabled = true;
-            showStatus('処理中...');
-
+            splitProcessBtn.disabled = true; showStatus('処理中...');
             try {
                 const zip = new JSZip();
-                
                 if (splitFiles.length === 1) {
                     await processSplitSingle(splitFiles[0], singlePdfDoc, mode, zip);
                     const content = await zip.generateAsync({type: "blob"});
@@ -425,13 +920,7 @@
                     const content = await zip.generateAsync({type: "blob"});
                     saveAs(content, `bulk_split_${Date.now()}.zip`);
                 }
-            } catch(e) {
-                console.error(e);
-                alert("エラーが発生しました");
-            } finally {
-                splitProcessBtn.disabled = false;
-                hideStatus();
-            }
+            } catch(e) { console.error(e); showToast("エラーが発生しました"); } finally { splitProcessBtn.disabled = false; hideStatus(); }
         });
 
         async function processSplitAll(doc, base, zip) {
@@ -447,17 +936,14 @@
 
         async function processSplitSingle(file, doc, mode, zip) {
             const base = file.name.replace('.pdf', '');
-            if (mode === 'all') {
-                await processSplitAll(doc, base, zip);
-            } else {
+            if (mode === 'all') await processSplitAll(doc, base, zip);
+            else {
                 const splitAt = parseInt(splitPageSlider.value) - 1;
                 const total = doc.getPageCount();
-                
                 const d1 = await PDFLib.PDFDocument.create();
                 const idx1 = Array.from({length: splitAt}, (_, i) => i);
                 (await d1.copyPages(doc, idx1)).forEach(p => d1.addPage(p));
                 zip.file(`${base}_part1.pdf`, await d1.save());
-
                 const d2 = await PDFLib.PDFDocument.create();
                 const idx2 = Array.from({length: total - splitAt}, (_, i) => i + splitAt);
                 (await d2.copyPages(doc, idx2)).forEach(p => d2.addPage(p));
@@ -465,147 +951,91 @@
             }
         }
 
-        // ==========================================
-        // MERGE LOGIC (New Implementation)
-        // ==========================================
+        // ... [Merge Logic] ...
         const mergeDropZone = document.getElementById('merge-drop-zone');
         const mergeFileInput = document.getElementById('merge-file-input');
         const mergeList = document.getElementById('merge-list');
         const mergeEmptyMsg = document.getElementById('merge-empty-msg');
         const mergeProcessBtn = document.getElementById('merge-process-btn');
-
-        // Store file objects. Since we need to reorder, we will map DOM elements to this data.
-        // Actually, simpler: Store objects in a map by ID, list has ID.
-        let mergeFileMap = {}; 
-        let mergeCounter = 0;
+        let mergeFileMap = {}; let mergeCounter = 0;
 
         mergeDropZone.addEventListener('dragover', (e) => { e.preventDefault(); mergeDropZone.classList.add('drag-active'); });
         mergeDropZone.addEventListener('dragleave', () => mergeDropZone.classList.remove('drag-active'));
-        mergeDropZone.addEventListener('drop', (e) => {
-            e.preventDefault();
-            mergeDropZone.classList.remove('drag-active');
-            if(e.dataTransfer.files.length) addMergeFiles(e.dataTransfer.files);
-        });
+        mergeDropZone.addEventListener('drop', (e) => { e.preventDefault(); mergeDropZone.classList.remove('drag-active'); if(e.dataTransfer.files.length) addMergeFiles(e.dataTransfer.files); });
         mergeDropZone.addEventListener('click', () => mergeFileInput.click());
         mergeFileInput.addEventListener('change', (e) => { if(e.target.files.length) addMergeFiles(e.target.files); });
 
         function addMergeFiles(files) {
             const pdfFiles = Array.from(files).filter(f => f.type === 'application/pdf');
             if (pdfFiles.length === 0) return;
-
-            mergeEmptyMsg.classList.add('hidden');
-            mergeProcessBtn.disabled = false;
-
+            mergeEmptyMsg.classList.add('hidden'); mergeProcessBtn.disabled = false;
             pdfFiles.forEach(file => {
                 const id = `mf-${mergeCounter++}`;
                 mergeFileMap[id] = file;
                 createMergeListItem(id, file.name);
             });
-            // Reset input for same file selection
             mergeFileInput.value = '';
         }
 
         function createMergeListItem(id, name) {
             const li = document.createElement('li');
-            li.className = "draggable-item bg-gray-50 border border-gray-200 rounded-lg p-3 flex items-center justify-between group hover:border-indigo-300";
-            li.draggable = true;
-            li.dataset.id = id;
-            
+            li.className = "draggable-item bg-white border border-slate-200 rounded-xl p-3 flex items-center justify-between group hover:border-indigo-300 hover:shadow-sm";
+            li.draggable = true; li.dataset.id = id;
             li.innerHTML = `
                 <div class="flex items-center gap-3 overflow-hidden">
-                    <div class="cursor-grab text-gray-400 hover:text-indigo-500 p-1"><i class="ph ph-dots-six-vertical text-xl"></i></div>
-                    <div class="bg-white p-1.5 rounded text-red-500"><i class="ph-fill ph-file-pdf"></i></div>
-                    <span class="text-sm font-medium truncate text-gray-700 select-none">${name}</span>
+                    <div class="cursor-grab text-slate-300 hover:text-indigo-500 p-1"><i class="ph-bold ph-dots-six-vertical text-xl"></i></div>
+                    <div class="bg-red-50 p-1.5 rounded text-red-500"><i class="ph-fill ph-file-pdf"></i></div>
+                    <span class="text-sm font-bold truncate text-slate-700 select-none">${name}</span>
                 </div>
-                <button onclick="removeMergeItem('${id}')" class="text-gray-400 hover:text-red-500 p-1 rounded hover:bg-red-50 transition-colors">
-                    <i class="ph ph-x"></i>
-                </button>
+                <button onclick="removeMergeItem('${id}')" class="text-slate-300 hover:text-red-500 p-1 rounded hover:bg-red-50 transition-colors"><i class="ph-bold ph-x"></i></button>
             `;
-
-            // Drag Events
-            li.addEventListener('dragstart', () => {
-                li.classList.add('dragging');
-            });
-            li.addEventListener('dragend', () => {
-                li.classList.remove('dragging');
-            });
-
+            li.addEventListener('dragstart', () => li.classList.add('dragging'));
+            li.addEventListener('dragend', () => li.classList.remove('dragging'));
             mergeList.appendChild(li);
         }
 
-        // Drag Sort Logic (Vanilla JS)
         mergeList.addEventListener('dragover', (e) => {
             e.preventDefault();
             const afterElement = getDragAfterElement(mergeList, e.clientY);
             const draggable = document.querySelector('.dragging');
-            if (afterElement == null) {
-                mergeList.appendChild(draggable);
-            } else {
-                mergeList.insertBefore(draggable, afterElement);
-            }
+            if (afterElement == null) mergeList.appendChild(draggable); else mergeList.insertBefore(draggable, afterElement);
         });
 
         function getDragAfterElement(container, y) {
             const draggableElements = [...container.querySelectorAll('.draggable-item:not(.dragging)')];
-
             return draggableElements.reduce((closest, child) => {
                 const box = child.getBoundingClientRect();
                 const offset = y - box.top - box.height / 2;
-                if (offset < 0 && offset > closest.offset) {
-                    return { offset: offset, element: child };
-                } else {
-                    return closest;
-                }
+                if (offset < 0 && offset > closest.offset) return { offset: offset, element: child }; else return closest;
             }, { offset: Number.NEGATIVE_INFINITY }).element;
         }
 
-        // Global function for onclick
         window.removeMergeItem = function(id) {
             const el = document.querySelector(`li[data-id="${id}"]`);
-            if (el) el.remove();
-            delete mergeFileMap[id];
-            
-            if (Object.keys(mergeFileMap).length === 0) {
-                mergeEmptyMsg.classList.remove('hidden');
-                mergeProcessBtn.disabled = true;
-            }
+            if (el) el.remove(); delete mergeFileMap[id];
+            if (Object.keys(mergeFileMap).length === 0) { mergeEmptyMsg.classList.remove('hidden'); mergeProcessBtn.disabled = true; }
         };
 
-        // Merge Process
         mergeProcessBtn.addEventListener('click', async () => {
             const items = document.querySelectorAll('#merge-list li');
             if (items.length === 0) return;
-
-            mergeProcessBtn.disabled = true;
-            showStatus('結合処理中...');
-
+            mergeProcessBtn.disabled = true; showStatus('結合処理中...');
             try {
                 const mergedPdf = await PDFLib.PDFDocument.create();
-                
                 for (let i = 0; i < items.length; i++) {
                     const id = items[i].dataset.id;
                     const file = mergeFileMap[id];
-                    
                     showStatus(`結合中 (${i+1}/${items.length}): ${file.name}`);
-                    
                     const buffer = await file.arrayBuffer();
                     const srcDoc = await PDFLib.PDFDocument.load(buffer);
                     const copiedPages = await mergedPdf.copyPages(srcDoc, srcDoc.getPageIndices());
                     copiedPages.forEach((page) => mergedPdf.addPage(page));
                 }
-
                 showStatus('ファイル生成中...');
                 const pdfBytes = await mergedPdf.save();
                 const blob = new Blob([pdfBytes], { type: 'application/pdf' });
                 saveAs(blob, `merged_document_${Date.now()}.pdf`);
-
-            } catch (err) {
-                console.error(err);
-                alert('結合中にエラーが発生しました。暗号化されたPDFが含まれていないか確認してください。');
-            } finally {
-                mergeProcessBtn.disabled = false;
-                hideStatus();
-            }
+            } catch (err) { console.error(err); showToast('結合エラー'); } finally { mergeProcessBtn.disabled = false; hideStatus(); }
         });
 
     </script>
